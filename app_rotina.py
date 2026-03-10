@@ -16,8 +16,8 @@ conn = st.connection("gsheets", type=GSheetsConnection)
 def salvar_no_google(df):
     url = "https://docs.google.com/spreadsheets/d/13R_brsg-QP-XFdUSvYj0xpx5sDfw7ido7yd1d8kWNqs/edit"
     
-    # A SOLUÇÃO FINAL: Passar pelo "escudo" do Streamlit usando _instance.client
-    worksheet = conn._instance.client.open_by_url(url).worksheet("Página1")
+    # A COMBINAÇÃO FINAL DO COFRE: _instance._client (ambos com underline!)
+    worksheet = conn._instance._client.open_by_url(url).worksheet("Página1")
     
     # Tratamento rápido para garantir que a data vai como texto e não dá erro
     df_salvar = df.copy()
@@ -118,3 +118,4 @@ with st.expander("⚙️ Gerenciar Dias"):
             st.cache_data.clear()
             st.success(f"Rotina criada para {novo_dia.strftime('%d/%m/%Y')}!")
             st.rerun()
+
