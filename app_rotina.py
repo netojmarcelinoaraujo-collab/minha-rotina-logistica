@@ -8,12 +8,11 @@ COR_KAIZEN = "#00C3C3"
 
 st.markdown(f"# 🎯 Meu Checklist Diário | <span style='color:{COR_KAIZEN};'>Nuvem Ativada ☁️</span>", unsafe_allow_html=True)
 
-# Botão de segurança para destravar a memória em caso de erros futuros
-if st.button("🔄 Atualizar Conexão", type="secondary"):
+# Botão de segurança para destravar a memória em caso de erros na nuvem
+if st.button("🔄 Atualizar Conexão / Limpar Cache", type="secondary"):
     st.cache_data.clear()
     st.rerun()
 
-# Conexão oficial limpa (Sem underlines esquisitos!)
 conn = st.connection("gsheets", type=GSheetsConnection)
 
 ROTINA_PADRAO = {
@@ -24,15 +23,13 @@ ROTINA_PADRAO = {
     "📡 Validação ao vivo": ["Acompanhamento em tempo real das Rotas"]
 }
 
-# Ler dados (com try/except para não quebrar a tela)
 try:
-    df_rotina = conn.read(worksheet="Página1", ttl=2) # TTL baixo para dados sempre frescos
+    df_rotina = conn.read(worksheet="Página1", ttl=2)
 except Exception as e:
     st.error("A Google bloqueou o acesso temporariamente. Aguarde uns minutos e clique em Atualizar Conexão.")
     st.stop()
 
-# Trava anti-loop: Se estiver vazio, cria a base e PÁRA o código
-if df_rotina.empty:
+if df_rotina.empty or "Data" not in df_rotina.columns:
     st.warning("A inicializar a base de dados na nuvem pela primeira vez...")
     hoje = datetime.date.today().strftime("%Y-%m-%d")
     linhas = []
@@ -45,16 +42,34 @@ if df_rotina.empty:
     try:
         conn.update(worksheet="Página1", data=df_novo)
         st.cache_data.clear()
-        st.success("✅ Base criada! Por favor, atualize a página (F5) no seu navegador.")
+        st.success("✅ Base criada! Por favor, clique no botão 'Atualizar Conexão' lá em cima.")
     except Exception as e:
         st.error(f"Erro ao criar a base inicial. Detalhes: {e}")
-    
-    st.stop() # Isto impede o código de tentar ler e gravar em loop!
+    st.stop()
 
-# --- Daqui para baixo é a interface normal que já conhece ---
-df_rotina['Data'] = pd.to_datetime(df_rotina['Data']).dt.date
+# ==========================================
+# O GRANDE FILTRO DE LIMPEZA (Blindagem)
+# ==========================================
+# 1. Remove linhas completamente vazias que o Google Sheets manda por engano
+df_rotina = df_rotina.dropna(how='all')
+
+# 2. Força a conversão da 'Data' (valores inválidos são ignorados)
+df_rotina['Data'] = pd.to_datetime(df_rotina['Data'], errors='coerce').dt.date
+
+# 3. Força a coluna 'Concluído' a ser Verdadeiro ou Falso de verdade
+if 'Concluído' in df_rotina.columns:
+    df_rotina['Concluído'] = df_rotina['Concluído'].apply(lambda x: str(x).strip().upper() == 'TRUE')
+
+# 4. Remove qualquer linha fantasma onde a Data não existia
+df_rotina = df_rotina.dropna(subset=['Data'])
+# ==========================================
 
 datas_disponiveis = sorted(df_rotina["Data"].unique(), reverse=True)
+
+if not datas_disponiveis:
+    st.info("Nenhuma rotina válida encontrada na planilha. Limpe a planilha no Google e recarregue.")
+    st.stop()
+
 data_selecionada = st.selectbox("📅 Selecione o dia para visualizar/editar:", datas_disponiveis)
 
 df_dia = df_rotina[df_rotina["Data"] == data_selecionada].copy()
@@ -90,11 +105,14 @@ if st.button("☁️ Sincronizar Progresso com o Google", type="primary", use_co
         
     with st.spinner('A guardar na nuvem...'):
         try:
-            conn.update(worksheet="Página1", data=df_rotina)
+            # Converte a data de volta para texto antes de mandar para o Google
+            df_salvar = df_rotina.copy()
+            df_salvar['Data'] = df_salvar['Data'].astype(str)
+            conn.update(worksheet="Página1", data=df_salvar)
             st.cache_data.clear()
             st.success("Sincronizado! O Google Sheets foi atualizado com a equipa.")
         except Exception as e:
-            st.error(f"Erro de sincronização. A Google pode estar ocupada: {e}")
+            st.error(f"Erro de sincronização: {e}")
 
 st.divider()
 with st.expander("⚙️ Gerenciar Dias"):
@@ -111,6 +129,7 @@ with st.expander("⚙️ Gerenciar Dias"):
             df_atualizado = pd.concat([df_rotina, df_novo], ignore_index=True)
             
             try:
+                df_atualizado['Data'] = df_atualizado['Data'].astype(str)
                 conn.update(worksheet="Página1", data=df_atualizado)
                 st.cache_data.clear()
                 st.success(f"Rotina criada para {novo_dia.strftime('%d/%m/%Y')}! Atualize a página.")
