@@ -15,7 +15,9 @@ conn = st.connection("gsheets", type=GSheetsConnection)
 # Função mágica que fala diretamente com o motor do Google e ignora o erro de resize
 def salvar_no_google(df):
     url = "https://docs.google.com/spreadsheets/d/13R_brsg-QP-XFdUSvYj0xpx5sDfw7ido7yd1d8kWNqs/edit"
-    worksheet = conn._client.open_by_url(url).worksheet("Página1")
+    
+    # A SOLUÇÃO FINAL: Passar pelo "escudo" do Streamlit usando _instance.client
+    worksheet = conn._instance.client.open_by_url(url).worksheet("Página1")
     
     # Tratamento rápido para garantir que a data vai como texto e não dá erro
     df_salvar = df.copy()
