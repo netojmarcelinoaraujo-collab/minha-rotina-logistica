@@ -2,32 +2,19 @@ import streamlit as st
 import pandas as pd
 import datetime
 from streamlit_gsheets import GSheetsConnection
-from gspread_dataframe import set_with_dataframe 
 
 st.set_page_config(page_title="Minha Rotina | Torre de Rotas", layout="wide")
 COR_KAIZEN = "#00C3C3"
 
 st.markdown(f"# 🎯 Meu Checklist Diário | <span style='color:{COR_KAIZEN};'>Nuvem Ativada ☁️</span>", unsafe_allow_html=True)
 
-# 1. Conexão com o Google Sheets
-conn = st.connection("gsheets", type=GSheetsConnection)
+# Botão de segurança para destravar a memória em caso de erros futuros
+if st.button("🔄 Atualizar Conexão", type="secondary"):
+    st.cache_data.clear()
+    st.rerun()
 
-# Função nativa e imparável (Adeus, erros de formatação!)
-def salvar_no_google(df):
-    url = "https://docs.google.com/spreadsheets/d/13R_brsg-QP-XFdUSvYj0xpx5sDfw7ido7yd1d8kWNqs/edit"
-    worksheet = conn._instance._client.open_by_url(url).worksheet("Página1")
-    
-    # Prepara os dados de forma limpa
-    df_salvar = df.copy()
-    df_salvar['Data'] = df_salvar['Data'].astype(str)
-    df_salvar = df_salvar.fillna("") # Garante que não há erros de células vazias
-    
-    # Transforma a tabela numa lista bruta (O formato que a Google nunca recusa)
-    dados = [df_salvar.columns.values.tolist()] + df_salvar.values.tolist()
-    
-    # Limpa a aba e injeta os dados a partir da célula A1. O tamanho ajusta-se sozinho!
-    worksheet.clear()
-    worksheet.update(values=dados, range_name="A1")
+# Conexão oficial limpa (Sem underlines esquisitos!)
+conn = st.connection("gsheets", type=GSheetsConnection)
 
 ROTINA_PADRAO = {
     "🗺️ Rotas": ["Exportação dos dados", "Verificação no grupo do whatsapp", "Verificar Slowdown", "Enviar report nos grupos"],
@@ -37,29 +24,36 @@ ROTINA_PADRAO = {
     "📡 Validação ao vivo": ["Acompanhamento em tempo real das Rotas"]
 }
 
-# 2. Carregar Dados da Nuvem
+# Ler dados (com try/except para não quebrar a tela)
 try:
-    df_rotina = conn.read(worksheet="Página1") 
-except Exception:
-    df_rotina = pd.DataFrame()
+    df_rotina = conn.read(worksheet="Página1", ttl=2) # TTL baixo para dados sempre frescos
+except Exception as e:
+    st.error("A Google bloqueou o acesso temporariamente. Aguarde uns minutos e clique em Atualizar Conexão.")
+    st.stop()
 
-# 3. Se a planilha estiver vazia, cria a estrutura inicial
+# Trava anti-loop: Se estiver vazio, cria a base e PÁRA o código
 if df_rotina.empty:
-    st.warning("Inicializando a base de dados na nuvem pela primeira vez...")
+    st.warning("A inicializar a base de dados na nuvem pela primeira vez...")
     hoje = datetime.date.today().strftime("%Y-%m-%d")
     linhas = []
     for categoria, tarefas in ROTINA_PADRAO.items():
         for tarefa in tarefas:
             linhas.append({"Data": hoje, "Categoria": categoria, "Tarefa": tarefa, "Concluído": False})
-    df_rotina = pd.DataFrame(linhas)
     
-    salvar_no_google(df_rotina)
-    st.rerun()
+    df_novo = pd.DataFrame(linhas)
+    
+    try:
+        conn.update(worksheet="Página1", data=df_novo)
+        st.cache_data.clear()
+        st.success("✅ Base criada! Por favor, atualize a página (F5) no seu navegador.")
+    except Exception as e:
+        st.error(f"Erro ao criar a base inicial. Detalhes: {e}")
+    
+    st.stop() # Isto impede o código de tentar ler e gravar em loop!
 
-# Converte data para o formato correto na tela
+# --- Daqui para baixo é a interface normal que já conhece ---
 df_rotina['Data'] = pd.to_datetime(df_rotina['Data']).dt.date
 
-# 4. Filtros
 datas_disponiveis = sorted(df_rotina["Data"].unique(), reverse=True)
 data_selecionada = st.selectbox("📅 Selecione o dia para visualizar/editar:", datas_disponiveis)
 
@@ -73,7 +67,6 @@ st.write(f"**Progresso do Dia:** {progresso}% concluído")
 st.progress(progresso / 100)
 st.write("")
 
-# 5. Editor de Dados
 st.markdown("### 📋 Lista de Tarefas (Sincronizada ao Vivo)")
 df_editado = st.data_editor(
     df_dia,
@@ -88,8 +81,6 @@ df_editado = st.data_editor(
     }
 )
 
-# 6. Botão de Salvar na Nuvem
-st.write("")
 if st.button("☁️ Sincronizar Progresso com o Google", type="primary", use_container_width=True):
     df_rotina.update(df_editado)
     
@@ -98,11 +89,13 @@ if st.button("☁️ Sincronizar Progresso com o Google", type="primary", use_co
         df_rotina = pd.concat([df_rotina, novas_linhas], ignore_index=True)
         
     with st.spinner('A guardar na nuvem...'):
-        salvar_no_google(df_rotina)
-        st.cache_data.clear()
-        st.success("Sincronizado! O Google Sheets foi atualizado.")
+        try:
+            conn.update(worksheet="Página1", data=df_rotina)
+            st.cache_data.clear()
+            st.success("Sincronizado! O Google Sheets foi atualizado com a equipa.")
+        except Exception as e:
+            st.error(f"Erro de sincronização. A Google pode estar ocupada: {e}")
 
-# 7. Gerar Novo Dia
 st.divider()
 with st.expander("⚙️ Gerenciar Dias"):
     novo_dia = st.date_input("Escolha a data:")
@@ -117,9 +110,9 @@ with st.expander("⚙️ Gerenciar Dias"):
             df_novo = pd.DataFrame(linhas_novo_dia)
             df_atualizado = pd.concat([df_rotina, df_novo], ignore_index=True)
             
-            salvar_no_google(df_atualizado)
-            st.cache_data.clear()
-            st.success(f"Rotina criada para {novo_dia.strftime('%d/%m/%Y')}!")
-            st.rerun()
-
-
+            try:
+                conn.update(worksheet="Página1", data=df_atualizado)
+                st.cache_data.clear()
+                st.success(f"Rotina criada para {novo_dia.strftime('%d/%m/%Y')}! Atualize a página.")
+            except Exception as e:
+                st.error("Erro ao gerar novo dia.")
