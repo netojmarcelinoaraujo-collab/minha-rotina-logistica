@@ -12,19 +12,22 @@ st.markdown(f"# 🎯 Meu Checklist Diário | <span style='color:{COR_KAIZEN};'>N
 # 1. Conexão com o Google Sheets
 conn = st.connection("gsheets", type=GSheetsConnection)
 
-# Função mágica que fala diretamente com o motor do Google e ignora o erro de resize
+# Função nativa e imparável (Adeus, erros de formatação!)
 def salvar_no_google(df):
     url = "https://docs.google.com/spreadsheets/d/13R_brsg-QP-XFdUSvYj0xpx5sDfw7ido7yd1d8kWNqs/edit"
-    
-    # A COMBINAÇÃO FINAL DO COFRE: _instance._client (ambos com underline!)
     worksheet = conn._instance._client.open_by_url(url).worksheet("Página1")
     
-    # Tratamento rápido para garantir que a data vai como texto e não dá erro
+    # Prepara os dados de forma limpa
     df_salvar = df.copy()
     df_salvar['Data'] = df_salvar['Data'].astype(str)
+    df_salvar = df_salvar.fillna("") # Garante que não há erros de células vazias
     
-    # Cola a tabela exata lá dentro sem tentar apagar células extras
-    set_with_dataframe(worksheet, df_salvar, resize=False)
+    # Transforma a tabela numa lista bruta (O formato que a Google nunca recusa)
+    dados = [df_salvar.columns.values.tolist()] + df_salvar.values.tolist()
+    
+    # Limpa a aba e injeta os dados a partir da célula A1. O tamanho ajusta-se sozinho!
+    worksheet.clear()
+    worksheet.update(values=dados, range_name="A1")
 
 ROTINA_PADRAO = {
     "🗺️ Rotas": ["Exportação dos dados", "Verificação no grupo do whatsapp", "Verificar Slowdown", "Enviar report nos grupos"],
@@ -118,4 +121,5 @@ with st.expander("⚙️ Gerenciar Dias"):
             st.cache_data.clear()
             st.success(f"Rotina criada para {novo_dia.strftime('%d/%m/%Y')}!")
             st.rerun()
+
 
