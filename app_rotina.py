@@ -24,7 +24,8 @@ ROTINA_PADRAO = {
 }
 
 try:
-    df_rotina = conn.read(worksheet="Página1", ttl=2)
+    # A ALTERAÇÃO 1: ttl=0 garante que ele vai sempre ao Google Sheets ler os dados ao vivo!
+    df_rotina = conn.read(worksheet="Página1", ttl=0)
 except Exception as e:
     st.error("A Google bloqueou o acesso temporariamente. Aguarde uns minutos e clique em Atualizar Conexão.")
     st.stop()
@@ -48,7 +49,7 @@ if df_rotina.empty or "Data" not in df_rotina.columns:
     st.stop()
 
 # ==========================================
-# O GRANDE FILTRO DE LIMPEZA (Blindagem)
+# O GRANDE FILTRO DE LIMPEZA (Blindagem contra erros do Google Sheets)
 # ==========================================
 # 1. Remove linhas completamente vazias que o Google Sheets manda por engano
 df_rotina = df_rotina.dropna(how='all')
@@ -67,7 +68,7 @@ df_rotina = df_rotina.dropna(subset=['Data'])
 datas_disponiveis = sorted(df_rotina["Data"].unique(), reverse=True)
 
 if not datas_disponiveis:
-    st.info("Nenhuma rotina válida encontrada na planilha. Limpe a planilha no Google e recarregue.")
+    st.info("Nenhuma rotina válida encontrada na folha de cálculo. Limpe a folha no Google e recarregue.")
     st.stop()
 
 data_selecionada = st.selectbox("📅 Selecione o dia para visualizar/editar:", datas_disponiveis)
@@ -111,6 +112,10 @@ if st.button("☁️ Sincronizar Progresso com o Google", type="primary", use_co
             conn.update(worksheet="Página1", data=df_salvar)
             st.cache_data.clear()
             st.success("Sincronizado! O Google Sheets foi atualizado com a equipa.")
+            
+            # A ALTERAÇÃO 2: Força a página a recarregar para mostrar os checks confirmados!
+            st.rerun()
+            
         except Exception as e:
             st.error(f"Erro de sincronização: {e}")
 
@@ -133,5 +138,6 @@ with st.expander("⚙️ Gerenciar Dias"):
                 conn.update(worksheet="Página1", data=df_atualizado)
                 st.cache_data.clear()
                 st.success(f"Rotina criada para {novo_dia.strftime('%d/%m/%Y')}! Atualize a página.")
+                st.rerun()
             except Exception as e:
                 st.error("Erro ao gerar novo dia.")
