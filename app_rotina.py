@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import datetime
 from streamlit_gsheets import GSheetsConnection
+from gspread_dataframe import set_with_dataframe # O NOVO IMPORT MÁGICO
 
 st.set_page_config(page_title="Minha Rotina | Torre de Rotas", layout="wide")
 COR_KAIZEN = "#00C3C3"
@@ -10,6 +11,18 @@ st.markdown(f"# 🎯 Meu Checklist Diário | <span style='color:{COR_KAIZEN};'>N
 
 # 1. Conexão com o Google Sheets
 conn = st.connection("gsheets", type=GSheetsConnection)
+
+# Função mágica que fala diretamente com o motor do Google e ignora o erro de resize
+def salvar_no_google(df):
+    url = "https://docs.google.com/spreadsheets/d/13R_brsg-QP-XFdUSvYj0xpx5sDfw7ido7yd1d8kWNqs/edit"
+    worksheet = conn.client.open_by_url(url).worksheet("Página1")
+    
+    # Tratamento rápido para garantir que a data vai como texto e não dá erro
+    df_salvar = df.copy()
+    df_salvar['Data'] = df_salvar['Data'].astype(str)
+    
+    # Cola a tabela exata lá dentro sem tentar apagar células extras
+    set_with_dataframe(worksheet, df_salvar, resize=False)
 
 ROTINA_PADRAO = {
     "🗺️ Rotas": ["Exportação dos dados", "Verificação no grupo do whatsapp", "Verificar Slowdown", "Enviar report nos grupos"],
@@ -21,7 +34,7 @@ ROTINA_PADRAO = {
 
 # 2. Carregar Dados da Nuvem
 try:
-    df_rotina = conn.read(worksheet="Página1") # Pode ser "Sheet1" dependendo do idioma do seu Google
+    df_rotina = conn.read(worksheet="Página1") 
 except Exception:
     df_rotina = pd.DataFrame()
 
@@ -35,8 +48,8 @@ if df_rotina.empty:
             linhas.append({"Data": hoje, "Categoria": categoria, "Tarefa": tarefa, "Concluído": False})
     df_rotina = pd.DataFrame(linhas)
     
-    # CORREÇÃO AQUI: Impedir que o Streamlit tente deletar células do Google
-    conn.update(worksheet="Página1", data=df_rotina, resize=False)
+    # Usa a nova função de salvar
+    salvar_no_google(df_rotina)
     st.rerun()
 
 # Converte data para o formato correto na tela
@@ -81,8 +94,8 @@ if st.button("☁️ Sincronizar Progresso com o Google", type="primary", use_co
         df_rotina = pd.concat([df_rotina, novas_linhas], ignore_index=True)
         
     with st.spinner('A guardar na nuvem...'):
-        # CORREÇÃO AQUI TAMBÉM: resize=False
-        conn.update(worksheet="Página1", data=df_rotina, resize=False)
+        # Usa a nova função de salvar
+        salvar_no_google(df_rotina)
         st.cache_data.clear()
         st.success("Sincronizado! O Google Sheets foi atualizado.")
 
@@ -101,8 +114,8 @@ with st.expander("⚙️ Gerenciar Dias"):
             df_novo = pd.DataFrame(linhas_novo_dia)
             df_atualizado = pd.concat([df_rotina, df_novo], ignore_index=True)
             
-            # CORREÇÃO AQUI TAMBÉM: resize=False
-            conn.update(worksheet="Página1", data=df_atualizado, resize=False)
+            # Usa a nova função de salvar
+            salvar_no_google(df_atualizado)
             st.cache_data.clear()
             st.success(f"Rotina criada para {novo_dia.strftime('%d/%m/%Y')}!")
             st.rerun()
