@@ -34,7 +34,9 @@ if df_rotina.empty:
         for tarefa in tarefas:
             linhas.append({"Data": hoje, "Categoria": categoria, "Tarefa": tarefa, "Concluído": False})
     df_rotina = pd.DataFrame(linhas)
-    conn.update(worksheet="Página1", data=df_rotina)
+    
+    # CORREÇÃO AQUI: Impedir que o Streamlit tente deletar células do Google
+    conn.update(worksheet="Página1", data=df_rotina, resize=False)
     st.rerun()
 
 # Converte data para o formato correto na tela
@@ -72,17 +74,15 @@ df_editado = st.data_editor(
 # 6. Botão de Salvar na Nuvem
 st.write("")
 if st.button("☁️ Sincronizar Progresso com o Google", type="primary", use_container_width=True):
-    # Atualiza a parte do dia específico
     df_rotina.update(df_editado)
     
-    # Adiciona linhas novas se houver
     novas_linhas = df_editado[~df_editado.index.isin(df_dia.index)]
     if not novas_linhas.empty:
         df_rotina = pd.concat([df_rotina, novas_linhas], ignore_index=True)
         
-    # Salva no Google Sheets
     with st.spinner('A guardar na nuvem...'):
-        conn.update(worksheet="Página1", data=df_rotina)
+        # CORREÇÃO AQUI TAMBÉM: resize=False
+        conn.update(worksheet="Página1", data=df_rotina, resize=False)
         st.cache_data.clear()
         st.success("Sincronizado! O Google Sheets foi atualizado.")
 
@@ -100,6 +100,9 @@ with st.expander("⚙️ Gerenciar Dias"):
                     linhas_novo_dia.append({"Data": novo_dia, "Categoria": categoria, "Tarefa": tarefa, "Concluído": False})
             df_novo = pd.DataFrame(linhas_novo_dia)
             df_atualizado = pd.concat([df_rotina, df_novo], ignore_index=True)
-            conn.update(worksheet="Página1", data=df_atualizado)
+            
+            # CORREÇÃO AQUI TAMBÉM: resize=False
+            conn.update(worksheet="Página1", data=df_atualizado, resize=False)
             st.cache_data.clear()
             st.success(f"Rotina criada para {novo_dia.strftime('%d/%m/%Y')}!")
+            st.rerun()
